@@ -1,5 +1,3 @@
-# Download dataset 
-
 import torch
 import torchvision
 import torchvision.transforms as transforms
@@ -12,13 +10,15 @@ from google.colab import drive
 drive.mount('/content/drive')
 
 
-# Define transformations and convert the CIFAR-10 images to grayscale for the input and normalize the colored images for the output
+#define transformations, greyscale images, normalize
 
+#input transformation
 transform = transforms.Compose(
     [transforms.Grayscale(num_output_channels=1),
      transforms.ToTensor(),
      transforms.Normalize((0.5,), (0.5,))])
 
+#expected output transformation
 transform_target = transforms.Compose(
     [transforms.ToTensor(),
      transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
@@ -26,7 +26,7 @@ transform_target = transforms.Compose(
 
 
 
-# Load CIFAR-10 Dataset
+#class to handle data transformations 
 class CIFAR10Colorization(torchvision.datasets.CIFAR10):
     def __getitem__(self, index):
         img, _ = super().__getitem__(index)
@@ -36,6 +36,8 @@ class CIFAR10Colorization(torchvision.datasets.CIFAR10):
         target_img = transform_target(img)
 
         return input_img, target_img
+    
+#STILL NEEDED: make function for video transformation
 
 trainset = CIFAR10Colorization(root='./data', train=True, download=True)
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=4, shuffle=True, num_workers=2)
@@ -44,29 +46,29 @@ testset = CIFAR10Colorization(root='./data', train=False, download=True)
 testloader = torch.utils.data.DataLoader(testset, batch_size=4, shuffle=False, num_workers=2)
 
 
-
-
-# Define CNN model 
-# classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+#class for NN
 class ColorizationNet(nn.Module):
+
+    #CODE TO COMPLETE: RNN integration and Video Data integration
     def __init__(self):
         super(ColorizationNet, self).__init__()
-        # Define layers of the network
-        self.conv1 = nn.Conv2d(1, 32, 3, padding=1)  # Grayscale input
-        self.conv2 = nn.Conv2d(32, 64, 3, padding=1)
-        self.conv3 = nn.Conv2d(64, 128, 3, padding=1)
-        self.fc1 = nn.Linear(128 * 32 * 32, 500)
-        self.fc2 = nn.Linear(500, 32 * 32 * 3)  # Output size to reshape to 3-channel image
+        #downsampling edit
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1)
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1)
+
+        #upsampling edit
+        self.upsample1 = nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1)
+        self.upsample2 = nn.ConvTranspose2d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1)
+        self.upsample3 = nn.ConvTranspose2d(32, 3, kernel_size=3, stride=1, padding=1)  #output 3 channels (RGB)
 
     def forward(self, x):
-        # Forward pass
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
-        x = x.view(-1, 128 * 32 * 32)
-        x = F.relu(self.fc1(x))
-        x = torch.sigmoid(self.fc2(x))
-        x = x.view(-1, 3, 32, 32)  # Reshape to color image
+        x = F.relu(self.upsample1(x))
+        x = F.relu(self.upsample2(x))
+        x = torch.sigmoid(self.upsample3(x)) 
         return x
 
 
@@ -77,18 +79,18 @@ net = ColorizationNet()
 criterion = nn.MSELoss()
 optimizer = optim.Adam(net.parameters(), lr=0.001)
 
-num_epochs = 10  # Define the number of epochs for training
+num_epochs = 5
 
 print("Starting Training...")
-for epoch in range(num_epochs):  # loop over the dataset multiple times
+for epoch in range(num_epochs):
     running_loss = 0.0
     for i, data in enumerate(trainloader, 0):
         inputs, targets = data
 
-        # zero the parameter gradients
+        #zero grad
         optimizer.zero_grad()
 
-        # forward + backward + optimize
+        #compute
         outputs = net(inputs)
         loss = criterion(outputs, targets)
         loss.backward()
@@ -104,10 +106,8 @@ print('Finished Training')
 
 
 
-
-# Function to convert a tensor to an image
 def imshow(img):
-    img = img / 2 + 0.5  # unnormalize
+    img = img / 2 + 0.5 
     npimg = img.numpy()
     plt.imshow(np.transpose(npimg, (1, 2, 0)))
     plt.show()
@@ -115,7 +115,6 @@ def imshow(img):
 
 
 
-#Displaying Grayscale Input and Colorized Output 
 # test data
 dataiter = iter(testloader)
 images, labels = dataiter.next()
