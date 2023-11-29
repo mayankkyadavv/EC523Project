@@ -5,6 +5,7 @@ import os
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import matplotlib.pyplot as plt
 
 from google.colab import drive
 drive.mount('/content/drive')
@@ -57,8 +58,12 @@ class ColorizationNet(nn.Module):
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1)
         self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1)
 
+        self.rnn_hidden_size = 128
+
+        self.rnn = nn.LSTM(input_size=128, hidden_size=self.rnn_hidden_size, num_layers=1, batch_first=True)
+
         #upsampling edit
-        self.upsample1 = nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1)
+        self.upsample1 = nn.ConvTranspose2d(128 + self.rnn_hidden_size, 64, kernel_size=3, stride=2, padding=1, output_padding=1)
         self.upsample2 = nn.ConvTranspose2d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1)
         self.upsample3 = nn.ConvTranspose2d(32, 3, kernel_size=3, stride=1, padding=1)  #output 3 channels (RGB)
 
@@ -66,7 +71,19 @@ class ColorizationNet(nn.Module):
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
-        x = F.relu(self.upsample1(x))
+        
+        # Reshape for LSTM
+        batch_size, channels, height, width = x.size()
+        x = x.view(batch_size, channels, -1).permute(0, 2, 1)
+
+        # Forward pass through LSTM
+        output, _ = self.rnn(x)
+
+        # Reshape back for upsampling
+        output = output.permute(0, 2, 1).view(batch_size, channels, height, width)
+
+        # Forward pass through upsampling layers
+        x = F.relu(self.upsample1(torch.cat([x, output], dim=1)))
         x = F.relu(self.upsample2(x))
         x = torch.sigmoid(self.upsample3(x)) 
         return x
