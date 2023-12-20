@@ -36,7 +36,7 @@ drive.mount('/content/drive')
 #import cv2
 #import os
 
-#ef extract_frames(video_path, frame_dir, frame_rate=2):
+#def extract_frames(video_path, frame_dir, frame_rate=2):
 #    video = cv2.VideoCapture(video_path)
 #    frame_count = 0
 #
@@ -45,7 +45,7 @@ drive.mount('/content/drive')
    #     if not success:
     #        break
 #
- #       # Extract frames based on frame_rate
+ #
   #      if frame_count % (30 // frame_rate) == 0:
    #         frame_path = os.path.join(frame_dir, f'frame{frame_count}.jpg')
     #        cv2.imwrite(frame_path, image)
@@ -67,7 +67,7 @@ drive.mount('/content/drive')
 #            frame_dir = os.path.join(frames_root_dir, category, f'video{i+1}_frames')
 #            os.makedirs(frame_dir, exist_ok=True)
 
-            # Extract frames
+
 #            extract_frames(video_path, frame_dir, frame_rate=2)
 
 #print("Frame extraction complete.")
@@ -88,13 +88,13 @@ class MixedDataset(Dataset):
         self.frame_dir = frame_dir
         self.transform = transform
 
-        # Load COCO images
+        #load COCO images
         coco_images = os.listdir(coco_dir)
         if subset_size:
             coco_images = random.sample(coco_images, min(subset_size, len(coco_images)))
         self.coco_images = [os.path.join(coco_dir, img) for img in coco_images]
 
-        # Load video frame paths
+        #load video frame paths
         all_video_folders = []
         for category in os.listdir(frame_dir):
             category_path = os.path.join(frame_dir, category)
@@ -102,7 +102,7 @@ class MixedDataset(Dataset):
                 video_folders = [os.path.join(category_path, video_folder) for video_folder in os.listdir(category_path)]
                 all_video_folders.extend(video_folders)
 
-        # Select a subset of videos if num_videos is specified
+        #select a subset of videos if num_videos is specified
         if num_videos and num_videos < len(all_video_folders):
             self.video_frame_folders = random.sample(all_video_folders, num_videos)
         else:
@@ -119,8 +119,7 @@ class MixedDataset(Dataset):
         is_video = file_path.startswith(self.frame_dir)
 
         if is_video:
-            # Load frames from the video folder
-            frames = sorted(os.listdir(file_path))  # Ensure frames are in order
+            frames = sorted(os.listdir(file_path))
             transformed_sequence = []
             for frame in frames:
                 frame_path = os.path.join(file_path, frame)
@@ -130,13 +129,12 @@ class MixedDataset(Dataset):
                 transformed_sequence.append(image)
             return transformed_sequence, True
         else:
-            # Load a single COCO image
             image = Image.open(file_path).convert('RGB')
             if self.transform:
                 image = self.transform(image)
             return [image], False
 
-# Function to convert image to LAB color space
+#function to convert image to LAB color space
 def import_image(img):
     lab_image = color.rgb2lab(np.array(img))
     lab_image[0] = (lab_image[0] - 50) / 50  # Normalize L channel
@@ -144,23 +142,23 @@ def import_image(img):
     lab_image[2] = lab_image[2] / 128
     return torch.FloatTensor(np.transpose(lab_image, (2, 0, 1)))
 
-# Set a seed for reproducibility
+
 random.seed(42)
 
-# Transformation
+#transformation
 uniform_size = (256, 256)
 img_transform = transforms.Compose([
     transforms.Resize(uniform_size),
     transforms.Lambda(import_image),
 ])
 
-# Paths to your datasets
+#paths to your datasets
 train_path = '/content/drive/MyDrive/EC523Project/coco/train/train2017/'
 val_path = '/content/drive/MyDrive/EC523Project/coco/val/val2017/'
 video_dir = '/content/drive/MyDrive/EC523Project/video_extracted/frames/'
 
-# Create custom datasets
-num_videos = 500  # Adjust as needed
+#create custom datasets
+num_videos = 100
 train_dataset = MixedDataset(coco_dir=train_path, frame_dir=video_dir, transform=img_transform, subset_size=6000, num_videos=num_videos)
 val_dataset = MixedDataset(coco_dir=val_path, frame_dir=video_dir, transform=img_transform, subset_size=700, num_videos=num_videos)
 
@@ -169,15 +167,14 @@ def custom_collate_fn(batch):
     is_video_flags = []
     for item in batch:
         sequence, is_video = item
-        images.extend(sequence)  # Flatten the list of lists
-        is_video_flags.extend([is_video] * len(sequence))  # Repeat the flag for each image in the sequence
+        images.extend(sequence)
+        is_video_flags.extend([is_video] * len(sequence))
     images_tensor = torch.stack(images)
     is_video_flags_tensor = torch.tensor(is_video_flags, dtype=torch.bool)
     return images_tensor, is_video_flags_tensor
 
-# Update DataLoaders to use custom collate function
-train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=0, collate_fn=custom_collate_fn)
-val_loader = DataLoader(val_dataset, batch_size=8, shuffle=False, num_workers=0, collate_fn=custom_collate_fn)
+train_loader = DataLoader(train_dataset, batch_size=2, shuffle=True, num_workers=0, collate_fn=custom_collate_fn)
+val_loader = DataLoader(val_dataset, batch_size=2, shuffle=False, num_workers=0, collate_fn=custom_collate_fn)
 
 import torch
 import torch.nn as nn
@@ -259,18 +256,18 @@ class UNet(nn.Module):
     def __init__(self, n_channels, n_classes, bilinear=True):
         super(UNet, self).__init__()
 
-        # Encoder (Downsampling Path)
+        #encoder (downsampling path)
         self.inc = inconv(n_channels, 64)
         self.down1 = down(64, 128)
         self.down2 = down(128, 256)
         self.down3 = down(256, 512)
         self.down4 = down(512, 512)
 
-        # LSTM layer for video frames
-        self.lstm = nn.LSTM(input_size=512, hidden_size=512, batch_first=True)
-        self.fc = nn.Linear(512, 512)  # Adjust the dimensions as needed
+        #LSTM layer for video frames
+        self.lstm = nn.LSTM(input_size=512, hidden_size=64, batch_first=True)
+        self.fc = nn.Linear(64, 512)
 
-        # Decoder (Upsampling Path)
+        #decoder (upsampling path)
         self.up1 = up(1024, 256, bilinear)
         self.up2 = up(512, 128, bilinear)
         self.up3 = up(256, 64, bilinear)
@@ -278,25 +275,23 @@ class UNet(nn.Module):
         self.outc = outconv(64, n_classes)
 
     def forward(self, x, is_video_flags):
-        # Encoding
+        #encoding
         x1 = self.inc(x)
         x2 = self.down1(x1)
         x3 = self.down2(x2)
         x4 = self.down3(x3)
         x5 = self.down4(x4)
 
-        # LSTM for video frames
-        # Reshape for LSTM: assuming x5 is of shape [batch, channels, height, width]
+        #reshape for LSTM: assuming x5 is of shape [batch, channels, height, width]
         b, c, h, w = x5.shape
         x5_flattened = x5.view(b, c, -1).permute(0, 2, 1)  # Reshape to [batch, seq_len, features]
         lstm_output, _ = self.lstm(x5_flattened)
         lstm_output = self.fc(lstm_output)
         lstm_output = lstm_output.permute(0, 2, 1).view(b, c, h, w)  # Reshape back
 
-        # Use is_video_flags to conditionally select LSTM processed data
         x5 = torch.where(is_video_flags.unsqueeze(1).unsqueeze(2).unsqueeze(3), lstm_output, x5)
 
-        # Decoding
+        #decoding
         x = self.up1(x5, x4)
         x = self.up2(x, x3)
         x = self.up3(x, x2)
@@ -304,29 +299,22 @@ class UNet(nn.Module):
         x = self.outc(x)
         return x
 
-
-
-
-# Example of creating a U-Net model for colorization (1 input channel, 2 output channels)
 model = UNet(n_channels=1, n_classes=2)
 model.to(device)
 #print(model)
 
 import torch.optim as optim
 
-# Optimizer (Adam)
-optimizer = optim.Adam(model.parameters(), lr=0.0001)
+optimizer = optim.Adam(model.parameters(), lr=0.001)
 criterion = nn.MSELoss()
 
 import matplotlib.pyplot as plt
 import torch.optim as optim
 #from pytorch_msssim import ssim
 
-# Training loop
 import gc
 import torch
 
-# Training loop
 model.train()
 
 epochs = 5
@@ -341,31 +329,30 @@ for epoch in range(epochs):
         images = images.to(device)
         is_video_flags = is_video_flags.to(device)
 
-        # Split images into L and AB components for the LAB color space
-        L = images[:, 0:1, :, :]  # Luminance channel
-        AB = images[:, 1:3, :, :]  # AB color channels
+        #split images into L and AB components for the LAB color space
+        L = images[:, 0:1, :, :]
+        AB = images[:, 1:3, :, :]
 
-        # Forward pass: Predict AB components from Luminance
+
         predicted_ab_batch = model(L, is_video_flags)
 
-        # Compute loss with the actual AB components
+
         loss = criterion(predicted_ab_batch, AB)
 
-        # Backpropagation
+
         optimizer.zero_grad()
         loss.backward()
 
-        # Optimization step
+
         optimizer.step()
 
         train_loss_avg[-1] += loss.item()
         num_batches += 1
 
-        # Clear memory
+        #clear memory
         del images, is_video_flags, L, AB, predicted_ab_batch, loss
-        gc.collect()  # Explicitly invoke the garbage collector
+        gc.collect()
 
-        # Print batch information
         print(f'Epoch: {epoch+1}, Batch: {batch_idx+1}/{len(train_loader)}, Batch Loss: {train_loss_avg[-1] / num_batches:.4f}')
 
     train_loss_avg[-1] /= num_batches
@@ -378,14 +365,12 @@ plt.xlabel('Epochs')
 plt.ylabel('Loss')
 plt.show()
 
-torch.save(model.state_dict(), '/content/drive/MyDrive/EC523Project/statepath.pth')
+torch.save(model.state_dict(), '/content/drive/MyDrive/EC523Project/train1.pth')
 
 model = UNet(n_channels=1, n_classes=2)
 
-# Load the model state dictionary
 model.load_state_dict(torch.load('/content/drive/MyDrive/EC523Project/statepath.pth'))
 
-# Move the model to the appropriate device
 model = model.to(device)
 
 from pytorch_msssim import ssim
@@ -393,7 +378,6 @@ import matplotlib.pyplot as plt
 from skimage import color
 import numpy as np
 
-# Function to convert LAB to RGB
 def lab_to_rgb(L, AB):
     LAB = torch.cat([L, AB], dim=1).data.cpu().numpy()
     RGBs = []
@@ -403,51 +387,55 @@ def lab_to_rgb(L, AB):
         RGBs.append(rgb)
     return RGBs
 
-# Set the model to evaluation mode
 model.eval()
 
-# Initialize loss
 total_ssim_loss = 0.0
 count = 0
 
-# Store some images for visualization
 original_images = []
 recolorized_images = []
 
 with torch.no_grad():
-    for i, lab_batch in enumerate(val_loader):
-        L = lab_batch[:, 0:1, :, :].to(device)
-        AB = lab_batch[:, 1:3, :, :].to(device)
+    for lab_batch, is_video_flags in val_loader:
+        for i in range(len(lab_batch)):
+            lab_image = lab_batch[i]
+            is_video_flag = is_video_flags[i]
 
-        # Forward pass
-        predicted_AB = model(L)
 
-        # Compute SSIM loss
-        ssim_val = ssim(predicted_AB, AB, data_range=1, size_average=True)
-        total_ssim_loss += ssim_val.item()
-        count += 1
+            if lab_image.dim() == 3:
+                lab_image = lab_image.unsqueeze(0)
 
-        # Convert to RGB for visualization
-        if i < 5:  # Change this number to display more images
-            original = lab_to_rgb(L, AB)
-            recolorized = lab_to_rgb(L, predicted_AB)
-            original_images.extend(original)
-            recolorized_images.extend(recolorized)
+            L = lab_image[:, 0:1, :, :].to(device)
+            AB = lab_image[:, 1:3, :, :].to(device)
+            is_video_flag = is_video_flag.unsqueeze(0).to(device)
 
-# Compute average loss
+
+            predicted_AB = model(L, is_video_flag)
+
+            ssim_val = ssim(predicted_AB, AB, data_range=1, size_average=True)
+            total_ssim_loss += ssim_val.item()
+            count += 1
+
+
+            if i < 5:
+                original = lab_to_rgb(L, AB)
+                recolorized = lab_to_rgb(L, predicted_AB)
+                original_images.extend(original)
+                recolorized_images.extend(recolorized)
+
 average_ssim_loss = total_ssim_loss / count
 print(f'Average SSIM Loss on Validation Set: {average_ssim_loss:.4f}')
 
 # Displaying original and recolorized images
 plt.figure(figsize=(100, 100))
 for i in range(len(original_images)):
-    # Original Images
+    # Original
     plt.subplot(2, len(original_images), i + 1)
     plt.imshow(original_images[i])
     plt.title('Original')
     plt.axis('off')
 
-    # Recolorized Images
+    # Recolorized
     plt.subplot(2, len(original_images), i + len(original_images) + 1)
     plt.imshow(recolorized_images[i])
     plt.title('Recolorized')
@@ -456,17 +444,17 @@ for i in range(len(original_images)):
 plt.show()
 
 # Displaying original and recolorized images in a 5x2 grid
-num_images_to_show = 5  # Number of images you want to display
-plt.figure(figsize=(10, 10))  # Adjust the figure size as needed
+num_images_to_show = 20
+plt.figure(figsize=(100, 100))
 
 for i in range(num_images_to_show):
-    # Original Images
+    # Original
     plt.subplot(num_images_to_show, 2, 2*i + 1)
     plt.imshow(original_images[i])
     plt.title('Original')
     plt.axis('off')
 
-    # Recolorized Images
+    # Recolorized
     plt.subplot(num_images_to_show, 2, 2*i + 2)
     plt.imshow(recolorized_images[i])
     plt.title('Recolorized')
